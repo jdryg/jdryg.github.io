@@ -1,8 +1,8 @@
 ---
-layout: post
 title:  "Probe Basic initial tests"
 date:   2024-01-01 10:00:00 +0200
 categories: cnc
+tags: cnc
 ---
 Installed Linux CNC 2.9.2 yesterday.
 

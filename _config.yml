@@ -29,9 +29,21 @@ twitter_username: jdryg
 github_username:  jdryg
 
 # Build settings
-theme: minima
+remote_theme: "mmistakes/minimal-mistakes@4.24.0"
 plugins:
   - jekyll-feed
+  - jekyll-include-cache
+
+defaults:
+  # _posts
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: single
+      author_profile: true
+      read_time: true
+      comments: true
 
 # Exclude from processing.
 # The following items will not be processed, by default.
