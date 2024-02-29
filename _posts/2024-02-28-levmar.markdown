@@ -1,6 +1,6 @@
 ---
 title:  "Optimizing a minimization algorithm"
-date:   2024-02-28 10:00:00 +0200
+date:   2024-02-28 09:40:00 +0200
 categories: code
 tags: code optimizations
 ---
@@ -380,14 +380,13 @@ Finally a profile using the AVX2+FMA optimized versions of the functions
 
 Some further improvements in this case and a regression. `lm_updateJacobianTranspose_avx2_fma` is 0.11s faster, `lm_A_mul_AT_avx2_fma` is also 0.11s faster but the `lm_l2NormXY_avx2_fma` is 0.06s slower. Overall not a big win for AVX2. I'll have to investigate further whether any more gains can be obtained from this version.
 
-Below is a table with all versions and the min/max time taken for all 378 minimizations.
+Below is a table comparing the various versions of the code. Times are per minimization iteration in microseconds. 
 
-Version | Min Time | Max Time | Minimum Error | Objective Function Evaluations
---|:-:|:-:|:-:|:-:
-original | 1505.144 ms | 1544.905 ms | 7.720187902e-01 | 71769
-reference | 1333.324 ms | 1367.355 ms | 7.720187306e-01 | 72109
-SSE2 | 1216.418 ms | 1229.347 ms | 7.720186710e-01 | 71905
-AVX2+FMA | 1212.993 ms | 1219.562 ms | 7.720184922e-01 | 72098
+Version | Min | Average | Max | StdDev | Minimum Error | Iterations | Objective Function Evaluations
+--|:-:|:-:|:-:|:-:|:-:|:-:|:-:
+original  | 27.893 | 28.101 | 29.204 | 0.391 | 7.720187902e-01 | 54179 | 71769
+reference | 24.467 | 24.697 | 25.273 | 0.307 | 7.720187306e-01 | 54433 | 72109
+SSE2      | 22.186 | 22.446 | 22.951 | 0.233 | 7.720186710e-01 | 54247 | 71905
+AVX2+FMA  | 22.504 | 22.569 | 22.655 | 0.047 | 7.720184922e-01 | 54415 | 72098
 
-One last remark. The total objective function evaluations depend on the intermediate results. Since the various versions do not calculate the exact same thing some minor differences are expected. The AVX2+FMA version is comparable in performance to the SSE2 version even though it evaluates the objective function approximately 200 more times. All benchmarks were executed with the exact same minimization options.
-
+One last remark. The total objective function evaluations and the number of iterations depend on the intermediate results. Since the various versions do not calculate the exact same thing, some minor differences are expected. All benchmarks were executed with the exact same minimization options.
