@@ -96,4 +96,30 @@ for (uint32_t iSet = 0; iSet < totalSets; ++iSet) {
 }
 ```
 
+Let's see an example. Assume `N = 3` and `K[0] = 1`, `K[1] = 5` and `K[2] = 3`. All the sets are shown in the table below.
+
+iSet | iVar[0] | iVar[1] | iVar[2]
+-|:-:|:-:|:-:
+0 | 0 | 0 | 0
+1 | 0 | 0 | 1
+2 | 0 | 0 | 2
+3 | 0 | 1 | 0
+4 | 0 | 1 | 1
+5 | 0 | 1 | 2
+6 | 0 | 2 | 0
+7 | 0 | 2 | 1
+8 | 0 | 2 | 2
+9 | 0 | 3 | 0
+10 | 0 | 3 | 1
+11 | 0 | 3 | 2
+12 | 0 | 4 | 0
+13 | 0 | 4 | 1
+14 | 0 | 4 | 2
+
+From the above table it's observed that:
+- `iVar[2] = iSet % 3` or `iVar[2] = (iSet / 1) % K[2]`.
+- `iVar[1] = (iSet / 3) % 5` or `iVar[1] = (iSet / K[2]) % K[1]`
+- `iVar[0] = (iSet / 15) % 1` or `iVar[0] = (iSet / (K[2] * K[1])) % K[0]`
+
+
 That's all for now. Thanks for reading.
