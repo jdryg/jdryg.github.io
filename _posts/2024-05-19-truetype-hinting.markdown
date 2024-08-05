@@ -41,9 +41,10 @@ tags: code truetype hinting
   - Execute the `prep` program
   - Copy current graphics state to initial graphics state
   - Copy current control values to initial CVT array.
+  - **2024-05-29**: Copy current storage values to initial storage array.
 - Copy initial graphics state to current graphics state
 - Copy initial CVT array to current CVT array
-- Reset storage array to 0
+- ~~Reset storage array to 0~~ (**2024-05-29**: Copy initial storage array to current storage array.)
 - Reset zone 0 point flags to 0 (all points untouched). Coordinates should not be reset!
 - Transform glyph points from FUnits to 26.6 format and mark all points as untouched, into zone 1
 - Add 4 phantom points to zone 1
