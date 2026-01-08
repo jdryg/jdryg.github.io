@@ -193,11 +193,11 @@ Stores and loads to/from external symbols are handled in the same way. Doing sto
 
 ### Commutative operations
 
-Commutative operations (`add`, `mul`, `fadd`, etc) should be hashed using some predefined ordering of their operands. Currently, all arithmetic instructions support either (register, register) or (register, constant) operands. When both operands are registers they are first ordered based on their IDs and hashed in that order. This allows calculating the same hash for both `add %vr1, %vr2` and `add %vr2, %vr1`.
+Commutative operations (`add`, `mul`, `fadd`, etc) should be hashed using some predefined ordering of their operands. Currently, all arithmetic instructions support either (register, register) or (register, constant) operands. When both operands are registers they are first ordered based on their VNs and hashed in that order. This allows calculating the same hash for both `add %vr1, %vr2` and `add %vr2, %vr1`.
 
 ### Comparisons
 
-Comparisons can be handled in the same way as the commutative operations. The only change required is to invert the comparison predicate operand. E.g. a signed less-equal comparison `icmp sle, %vr2, %vr1` is hashed as a signed greater-equal `icmp sge, %vr1, %vr2` due to the order of vreg IDs. 
+Comparisons can be handled in the same way as the commutative operations. The only change required is to invert the comparison predicate operand. E.g. a signed less-equal comparison `icmp sle, %vr2, %vr1` might be hashed as a signed greater-equal `icmp sge, %vr1, %vr2` due to the order of register VNs. 
 
 ### The end
 
