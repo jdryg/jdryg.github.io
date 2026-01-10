@@ -49,15 +49,13 @@ for each basic block BB {
         if INSTR is in the form DST = opcode SRC1, SRC2, ... {
             HASH = calculate instruction hash
             if HASH is in table T {
-                (VN, PREV) = get value number and instruction of HASH from T
+                VN = get value number of HASH from T
                 map VN to DST
-                map DST to the destination reg of PREV
                 mark INSTR as dead
             } else {
                 VN = generate new value number
-                insert (VN, INSTR) to T
+                insert (VN, HASH) to T
                 map VN to DST
-                map DST to DST
             }
         }
     }
@@ -78,7 +76,6 @@ E.g. multiple `%vr_i = call myFunc %vr0` should not be replaced by the first `ca
             if destination operand DST is not NULL {
                 VN = generate new value number
                 map VN to DST
-                map DST to DST
             }
         } else if INSTR is in the form DST = opcode SRC1, SRC2, ... {
             // Same as before...
@@ -90,7 +87,7 @@ E.g. multiple `%vr_i = call myFunc %vr0` should not be replaced by the first `ca
 
 ### Phis
 
-The other special instruction is `phi`. `phi`s always have a destination operand (register). That register always get a new value number. I haven't tried hashing phis because I don't expect to end up with multiple identical phis in the same basic block. Also I don't know if it's valid to eliminate phis because this might complicate the rest of the code.
+The other special instruction is `phi`. `phi`s always have a destination operand (register). There is no point in hashing `phi`s because they (by definition) appear at the start of a basic block and as a result all used register operands would get a new VN either way. In other words, trivial/redundant `phi`s will remain redundant and it's another pass' responsibility to remove those. As a result, the destination register always get a new VN.
 
 ```
     for each instruction INSTR in BB {
@@ -99,7 +96,6 @@ The other special instruction is `phi`. `phi`s always have a destination operand
         } else if INSTR is DST = phi [val1, BB1], [val2, BB2], ... {
             VN = generate new value number
             map VN to DST
-            map DST to DST
         } else if INSTR is in the form DST = opcode SRC1, SRC2, ... {
             // Same as before...
         }
@@ -201,4 +197,48 @@ Comparisons can be handled in the same way as the commutative operations. The on
 
 ### The end
 
-That's it. If I haven't forgot any major detail, that's how LVN is currently implemented in my SSA TAC IR. Thanks for reading.
+The complete algorithm is shown below.
+
+```
+for each basic block BB {
+    clear hash table T
+    clear value number to register map
+
+    for each instruction INSTR in BB {
+        if isCall(INSTR) {
+            if destination operand DST is not NULL {
+                VN = generate new value number
+                map VN to DST
+            }
+        } else if INSTR is DST = phi [val1, BB1], [val2, BB2], ... {
+            VN = generate new value number
+            map VN to DST
+        } else if INSTR is a store [MEM], SRC {
+            VN = get value number of SRC
+            assign VN to the [MEM]'s last stored VN
+        } else if INSTR is in the form DST = opcode SRC1, SRC2, ... {
+            if INSTR is a DST = load [MEM] {
+                VN = get [MEM]'s last stored VN
+                if VN is valid {
+                    map VN to DST
+                    mark INSTR as dead
+                    continue;
+                }
+            }
+
+            HASH = calculate instruction hash
+            if HASH is in table T {
+                (VN, PREV) = get value number and instruction of HASH from T
+                map VN to DST
+                mark INSTR as dead
+            } else {
+                VN = generate new value number
+                insert (VN, HASH) to T
+                map VN to DST
+            }
+        }
+    }
+}
+```
+
+That's it. Unless I forgot some major detail, that's how LVN is currently implemented in my SSA TAC IR. Thanks for reading.
