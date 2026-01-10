@@ -228,7 +228,7 @@ for each basic block BB {
 
             HASH = calculate instruction hash
             if HASH is in table T {
-                (VN, PREV) = get value number and instruction of HASH from T
+                VN = get value number of HASH from T
                 map VN to DST
                 mark INSTR as dead
             } else {
