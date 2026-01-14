@@ -1,0 +1,162 @@
+---
+title: "Dominator Tree Value Numbering and MemorySSA"
+date:  2026-01-14 19:20:00 +0200
+categories: compilers
+tags: optimizations, dtvn, memoryssa
+---
+
+With [Local Value Numbering](/local-value-numbering) implemented, the next logical step was to see if value numbering can move beyond basic block boundaries. One approach described in [Value Numbering](https://www.cs.tufts.edu/~nr/cs257/archive/keith-cooper/value-numbering.pdf) is Dominator Tree Value Numbering. Excluding the details about `phi` instructions, the main basic algorithm is just an extension to LVN. The main difference is that, instead of having a single hash table for mapping instruction hashes to value numbers, DTVN requires a scoped hash table with a bit of careful bookkeeping. Take a look at the paper for more details. Below I'll describe my version of the algorithm.
+
+### High-level algorithm
+
+```
+calculate the dominator tree DT of the function's CFG
+
+dtvn(entry_basic_block);
+
+dtvn(BB) {
+    push a new hash table scope
+
+    for each instruction INSTR in BB {
+        valueNumberInstr(INSTR);
+    }
+
+    for each child CBB of BB in the dominator tree {
+        dtvn(CBB);
+    }
+
+    pop hash table scope
+}
+```
+
+Assuming for now `valueNumberInstr()` does exactly the same thing as in the LVN case, that's it! That's the whole algorithm.
+
+### Scoped Hash Table
+
+The scoped hash table in my case is modeled as a single linked list of scopes (stack). 
+
+```
+typedef struct vn_scope_t
+{
+	vn_scope_t* m_Next;
+	hashmap_t* m_InstrVNMap;
+	hashmap_t* m_VNToRegMap;
+	// Other members which will become obselete in a second
+} vn_scope_t
+```
+
+In order to check if an instruction/hash has already been encountered, the stack is examined from top to bottom. New VNs and instructions/hashes are always inserted to the top scope. This might not be the most efficient approach but it doesn't require tracking which elements have been added to the table in order to remove them when returning from `dtvn()` as described in the paper. Also, recycling scopes and hashmaps help minimize memory allocations.
+
+One thing to note here, in case it's not clear, is that the register-to-register mapping, which is used after value numbering to rewrite instructions, and the list of dead instructions, are not included in each scope because they are the outputs of the whole algorithm and they correspond to the whole function.
+
+### Loads and Stores
+
+An issue which might not be immediately obvious with the above algorithm is how to handle memory value numbering. From the algorithm's perspective, redundant load elimination and store-to-load forwarding should also happen across basic block. This might not be beneficial in all cases, because it might extend the live ranges of virtual registers for too long, but as far as the VN algorithm is concerned they should be eliminated.
+
+Unfortunately, adapting the memory value numbering method used in the LVN's case to work with multiple basic blocks is too complicated, if it's even possible. So, in the simplest case of the algorithm presented above the safest thing to do is to clear the memory value number table when starting processing a new basic block, loosing any information which might be useful.
+
+Alternatively, the memory VN method can be replaced with something simpler but more powerful.
+
+### MemorySSA
+
+Initially, I had a hard time understanding what [MemorySSA](https://llvm.org/docs/MemorySSA.html) is and how it can be used. After skimming through [Optimistic Global Value Numbering for Compilers with Undefined Behavior](https://web.ist.utl.pt/nuno.lopes/students/Manuel_Brito_MSc.pdf), which briefly mentions MemorySSA, and after stumbling upon [Memory SSA Construction](https://mamba.rs/memory_ssa) things started falling into place. What follows is my own description of MemorySSA as I understand it now.
+
+MemorySSA is a way to reason about the state of memory in a function. It treats memory as a single variable, but instead of generating new virtual registers after each assignment (i.e. instructions that might write to memory) like in regular SSA, it increments a global version number. All instructions that might write to memory, like `store` or `call`, are `MemoryDef`s and all instructions that might read memory, like `load` or `load_zext`, are `MemoryUse`s. `MemoryDef`s take the existing memory version and produce a new version and `MemoryUse`s use the current memory version.
+
+The result of constructing MemorySSA for a function is an annotation on each memory-related instruction (`load`, `store`, `call`, etc.) with the corresponding memory access type (`MemoryDef` or `MemoryUse`). The version of this memory access can be used when value numbering `load`s, replacing the memory segment VNs presented in the LVN post.
+
+This way and without much trouble, a `load` instruction appearing in a basic block might be replaced by the same `load` instruction from its immediate dominator, if their memory versions match. If at any point in the CFG there was a `store` which might have affected the loaded value, the memory version would have changed and the two `load`s would end up referencing a different memory version.
+
+This is the simplest and safest usage of MemorySSA. If the memory versions of two `load` instructions match and their pointers are the same (remember that the function is in SSA form) they are guaranteed to load the same value from memory. So the later `load` can be eliminated and its virtual register replaced by the first `load`.
+
+More complex usage of MemorySSA requires some form of alias analysis. I haven't implemented any "points-to" analysis in the compiler, so I don't have any may-alias information at the moment. But, as mentioned in the previous post, there are 3 different memory operands which can be used to implement poor-man's alias analysis.
+
+### Poor-man's Alias Analysis
+
+When hashing a `load`, instead of adding the corresponding `MemoryUse`'s version to the hashed data, I first search for the "clobbering access". The clobbering access of a `load` is the closest `MemoryDef` in the MemorySSA's def-use chain which might affect the loaded data. Starting from the `load`'s `MemoryUse` defining access (i.e. the `MemoryDef` which produced the memory version used by the `MemoryUse` of the `load`) and given that:
+
+- `call` clobbers everything
+- `store` to a generic memory reference clobbers everything
+- `store` to a stack object clobbers only part of the referenced stack object
+- `store` to an external symbol clobbers only part of the referenced external symbol
+
+the algorithm returns the clobbering access (`MemoryDef`) of the specified `MemoryUse`.
+
+Below is the algorithm in C-like pseudocode.
+
+```
+mem_access_t* getClobberingAccess(mem_access_t* ma)
+{
+    assert(isMemoryUse(ma));
+
+    mem_access_t* md = ma->m_DefAccess;
+    assert(isMemoryDef(md));
+
+    // NOTE: The loop is guaranteed to terminate before reaching
+    // the head of the def-use chain because memAccessMayAlias()
+    // stops at memory phis. The head of the def-use chain is a 
+    // MemoryPhi at the entry basic block.
+    while (!memAccessMayAlias(ma, md)) {
+        md = md->DefAccess;
+    }
+
+    return md;
+}
+
+bool memAccessMayAlias(mem_access_t* muse, mem_access_t* mdef)
+{
+    if (isMemoryPhi(mdef)) {
+        // Stop at memory phis to keep things simple
+        return true;
+    }
+
+    if (isCall(mdef->m_Instr)) {
+        return true;
+    } else {
+        assert(isStore(mdef->m_Instr));
+
+        operand_t* storeDstOp = instrGetOperand(mdef->m_Instr, 0);
+        operand_t* loadSrcOp = instrGetOperand(muse->m_Instr, 1);
+
+        return memMayConflict(storeDstOp, loadSrcOp);
+    }
+
+    return true;
+}
+
+bool memMayConflict(operand_t* memA, operand_t* memB)
+{
+    if (isGenericMemRef(memA) && isGenericMemRef(memB)) {
+        // 2 generic memory references do not conflict if the use the same base and index
+        // registers, the same scale and the referenced parts do not overlap.
+        return !sameRegsScale || overlap;
+    } else if (isStackObj(memA) && isStackObj(memB)) {
+        // 2 stack objects do not conflict if they refer to different objects or if they
+        // refer to the same object but their ranges do not overlap.
+        return sameStackObj && overlap;
+    } else if (isStackObj(memA) && isExternalSym(memB)) {
+        // A stack object can never conflict with an external symbol
+        return false;
+    } else if (isExternalSym(memA) && isStackObj(memB)) {
+        // A stack object can never conflict with an external symbol
+        return false;
+    } else if (isExternalSym(memA) && isExternalSym(memB)) {
+        // 2 external symbols do not conflict if they refer to different objects or if they
+        // refer to the same object but their ranges do not overlap.
+        return sameExternalSym && overlap;
+    }
+
+    // In all other case it cannot be proven that the 2 memory operands do not conflict.
+    return true;
+}
+```
+
+### Minor changes from the LVN algorithm
+
+I have also made some other minor changes to the main value numbering loop compared to the LVN case.
+
+1. `call`s and `phi`s are completely ignored just like terminator instructions. Since they are ignored by the instruction loop there is no VN assigned to their corresponding registers. A new VN is automatically assigned when the virtual registers are used for the first time, the same way live-in regs automatically got a new VN in the LVN case. This simplifies the main loop a bit.
+2. `iconst` and `fconst` instructions are only value numbered locally (within the basic block that defines them). In the LVN case this was done by design. In a global VN algorithm, value numbering those instructions the same way as the rest, tends to extend the live ranges of corresponding (constant) registers a lot. Constants are easily rematerializable, so there is no point in keeping them for too long. This makes the register allocator's work easier.
+3. Instead of keeping track of the last stored VN at each memory location (which is difficult in the case of MemorySSA), whenever a `store` instruction is encountered it is converted to a dummy `load`. This `load` is hashed and inserted into the current scope. The `MemoryUse` of the dummy `load` uses the `store`'s `MemoryDef` as its defining access.
+
+That's it for now. Thanks for reading!
