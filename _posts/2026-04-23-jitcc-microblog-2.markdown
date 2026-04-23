@@ -59,7 +59,7 @@ So far I've found several bugs:
 - Don't move `sdiv/srem/udiv/urem` which might trap, outside of loops during LICM.
 	- Only ops by constants which are guaranteed to not trap are allowed to be moved.
 - Global union initializers
-	- The old code expected the initializer to have the same type as the declared type. Unions are special in this regard if designated initializers are used. Changed the code to allow the initializer to have a different type than the declared type and fill the rest of the allocated space with zeros. Relocations work as expected.
+	- The old code expected the initializer to have the same type as the declared type. Unions are special in this regard because the underlying IR type might not match the declared type. Changed the code to allow the initializer to have a different type than the declared type and fill the rest of the allocated space with zeros. Relocations work as expected.
 
 ## Other changes made to the compiler
 
