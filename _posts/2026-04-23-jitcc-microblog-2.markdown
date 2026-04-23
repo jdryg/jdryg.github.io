@@ -56,8 +56,8 @@ So far I've found several bugs:
 - Compound assignment to bitfield member
 - Removal of trivial phis with Undefined inputs.
 	- Those were removed unconditionally but they can only be removed if the only defined input dominates the phi.
-- Don't move `sdiv/srem/udiv/urem` outside of loops during LICM.
-	- Those instruction can trap so moving them out of the loop is wrong because even if the operation is undefined (e.g. div by 0) the loop might not be executed.
+- Don't move `sdiv/srem/udiv/urem` which might trap, outside of loops during LICM.
+	- Only ops by constants which are guaranteed to not trap are allowed to be moved.
 - Global union initializers
 	- The old code expected the initializer to have the same type as the declared type. Unions are special in this regard if designated initializers are used. Changed the code to allow the initializer to have a different type than the declared type and fill the rest of the allocated space with zeros. Relocations work as expected.
 
